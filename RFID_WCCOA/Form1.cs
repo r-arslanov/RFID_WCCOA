@@ -3,9 +3,11 @@ using Opc.Ua.Client;
 using RfidOpcUaForm;
 using Siemens.UAClientHelper;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Windows.Forms;
 using System.Globalization;
+using System.Text;
+using System.Windows.Forms;
 
 namespace RFID_WCCOA
 {
@@ -16,7 +18,6 @@ namespace RFID_WCCOA
         private UAClientHelperAPI myHelperApi;
         private Subscription mySubscription;
         private Subscription myEventSubscription;
-        private string myLogFilePath;
         private ushort myRfidNamespaceIndex;
         private UARfidMethodIdentifiers myRfidMethodIdentifiers;
         private ListViewNF SubscriptionListView;
@@ -30,9 +31,9 @@ namespace RFID_WCCOA
 
             //Create new overridden ListViews
             EventDataLV = new ListViewNF();
-         //   DrowEventDataListView();
+            //   DrowEventDataListView();
             SubscriptionListView = new ListViewNF();
-         //   DrowSubscriptionListView();
+            //   DrowSubscriptionListView();
         }
 
         private void connectBtn_Click(object sender, EventArgs e)
@@ -44,7 +45,7 @@ namespace RFID_WCCOA
             ConnectForm dlg = new ConnectForm(myHelperApi);
             dlg.ShowDialog();
             mySession = myHelperApi.Session;
-            if(mySession != null && mySession.Connected)
+            if (mySession != null && mySession.Connected)
             {
                 Debug.WriteLine("Session success connected");
                 try
@@ -56,10 +57,155 @@ namespace RFID_WCCOA
                 {
                     Debug.WriteLine("Error subscribe connection");
                 }
+                myHelperApi.ItemChangedNotification += new MonitoredItemNotificationEventHandler(Notification_MonitoredItem);
+                myHelperApi.ItemEventNotification += new MonitoredItemNotificationEventHandler(Notification_EventItem);
+                myHelperApi.KeepAliveNotification += new KeepAliveEventHandler(Notification_KeepAlive);
+                myRfidNamespaceIndex = GetRfidNamespaceIndex();
+                myRfidMethodIdentifiers = new UARfidMethodIdentifiers(myHelperApi);
             }
         }
 
-    #region OpcEventHandler
+
+
+        private void stpScnBtn_Click(object sender, EventArgs e)
+        {
+            NodeId methodNodeId = null;
+            NodeId objectNodeId = null;
+
+            methodNodeId = new NodeId(myRfidMethodIdentifiers.MethodIdList[0].Find(x => x.method == MethodToCall.ScanStop).methodNodeId, myRfidNamespaceIndex);
+            objectNodeId = new NodeId(myRfidMethodIdentifiers.MethodIdList[0].Find(x => x.method == MethodToCall.ScanStop).objectNodeId, myRfidNamespaceIndex);
+
+            IList<object> callResult = new List<object>();
+
+
+
+            try
+            {
+                callResult = myHelperApi.Session.Call(objectNodeId, methodNodeId, null);
+                Debug.WriteLine("---------------------- Success call stopScan method ----------------------");
+            }
+            catch
+            {
+                Debug.WriteLine("---------------------- Error call stopScan method ----------------------");
+            }
+        }
+        private ushort GetRfidNamespaceIndex()
+        {
+            ushort nameSpaceIndex = 0;
+
+            ReferenceDescriptionCollection refDescCol = new ReferenceDescriptionCollection();
+            refDescCol = myHelperApi.BrowseRoot();
+
+            //Browse to variable "AutoIdModelVersion" (mandatory in AutoID) in RfidReaderDeviceType object to find out namespace
+            foreach (ReferenceDescription refDescA in refDescCol)
+            {
+                if (refDescA.BrowseName.Name == "Objects")
+                {
+                    refDescCol = myHelperApi.BrowseNode(refDescA);
+                    foreach (ReferenceDescription refDescB in refDescCol)
+                    {
+                        if (refDescB.BrowseName.Name == "DeviceSet")
+                        {
+                            refDescCol = myHelperApi.BrowseNode(refDescB);
+                            foreach (ReferenceDescription refDescC in refDescCol)
+                            {
+                                if (refDescC.TypeDefinition == new ExpandedNodeId(RfidOpcUaForm.AutoID.ObjectTypes.RfidReaderDeviceType, (ushort)myHelperApi.GetNamespaceIndex(RfidOpcUaForm.AutoID.Namespaces.AutoID)))
+                                {
+                                    refDescCol = myHelperApi.BrowseNode(refDescC);
+                                    foreach (ReferenceDescription refDescD in refDescCol)
+                                    {
+                                        if (refDescD.BrowseName.Name == "AutoIdModelVersion")
+                                        {
+                                            nameSpaceIndex = refDescD.NodeId.NamespaceIndex;
+                                            break;
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            return nameSpaceIndex;
+        }
+
+        private void strtScnBtn_Click(object sender, EventArgs e)
+        {
+            NodeId methodNodeId = null;
+            NodeId objectNodeId = null;
+
+            methodNodeId = new NodeId(myRfidMethodIdentifiers.MethodIdList[0].Find(x => x.method == MethodToCall.ScanStart).methodNodeId, myRfidNamespaceIndex);
+            objectNodeId = new NodeId(myRfidMethodIdentifiers.MethodIdList[0].Find(x => x.method == MethodToCall.ScanStart).objectNodeId, myRfidNamespaceIndex);
+
+            IList<object> callResult = new List<object>();
+            ScanSettings scanSettings = new ScanSettings
+            {
+                DataAvailable = false,
+                Duration = 0D,
+                Cycles = 0
+            };
+
+            try
+            {
+                callResult = myHelperApi.Session.Call(objectNodeId, methodNodeId, scanSettings);
+                Debug.WriteLine("---------------------- Success call startScan method ----------------------");
+            }
+            catch
+            {
+                Debug.WriteLine("---------------------- Error call startScan method ----------------------");
+            }
+
+        }
+
+        private void btnRead_Click(object sender, EventArgs e)
+        {
+            NodeId methodNodeId = null;
+            NodeId objectNodeId = null;
+            methodNodeId = new NodeId(myRfidMethodIdentifiers.MethodIdList[0].Find(x => x.method == MethodToCall.ReadTag).methodNodeId, myRfidNamespaceIndex);
+            objectNodeId = new NodeId(myRfidMethodIdentifiers.MethodIdList[0].Find(x => x.method == MethodToCall.ReadTag).objectNodeId, myRfidNamespaceIndex);
+
+            object[] inpArgs = new object[6];
+            IList<object> callResult = new List<object>();
+            ScanData scanData = new ScanData();
+
+            inpArgs[0] = scanData;
+            inpArgs[1] = "RAW:BYTES";
+            inpArgs[2] = (ushort)1;
+            inpArgs[3] = (uint)4;
+            inpArgs[4] = (uint)12;
+            inpArgs[5] = ConvertStringToByteArray("");
+
+            try
+            {
+                callResult = myHelperApi.Session.Call(objectNodeId, methodNodeId, inpArgs);
+                string outputText;
+
+                outputText = "ReadPoint \t = " + "ReadPoint_1" + System.Environment.NewLine +
+                    "Time\t\t = " + DateTime.Now.ToString("MM/dd/yyyy HH:mm:ss.fff", CultureInfo.InvariantCulture) + System.Environment.NewLine +
+                    "OpcStatus\t = Good" + System.Environment.NewLine +
+                    "AutoIdStatus\t = " + callResult[1].ToString() + System.Environment.NewLine +
+                    "Description\t = " + ((AutoIdOperationStatusEnumeration)callResult[1]).ToString();
+                if ((AutoIdOperationStatusEnumeration)callResult[1] == 0)
+                {
+                    outputText += System.Environment.NewLine + "Data" + System.Environment.NewLine + "|" + System.Environment.NewLine;
+                    outputText += ConvertByteArrayToString((byte[])callResult[0]).ToUpper();
+                    txtRead.Text = ConvertByteArrayToString((byte[])callResult[0]).ToUpper();
+                }
+
+                Debug.WriteLine("---------------------- Success call read method ----------------------");
+                Debug.WriteLine(outputText);
+            }
+            catch
+            {
+                Debug.WriteLine("---------------------- Error call read method ----------------------");
+            }
+        }
+
+        #region OpcEventHandler
         private void Notification_MonitoredItem(MonitoredItem monitoredItem, MonitoredItemNotificationEventArgs e)
         {
             if (this.InvokeRequired)
@@ -176,7 +322,7 @@ namespace RFID_WCCOA
             // check for disconnected session.
             if (!ServiceResult.IsGood(e.Status))
             {
-//                UpdateLog("Client", "Lost connection to server; Reconnect failed", false);
+                //                UpdateLog("Client", "Lost connection to server; Reconnect failed", false);
 
                 //Release connection
                 try
@@ -189,10 +335,46 @@ namespace RFID_WCCOA
                 }
                 myHelperApi.Disconnect();
                 mySession = myHelperApi.Session;
- //               ClearUI();
+                //               ClearUI();
             }
         }
-    #endregion
+        #endregion
+
+        #region Helper
+        public byte[] ConvertStringToByteArray(string hex)
+        {
+            // If string is not codable caused by the length is not even add a string 0 at the front.
+            if (hex.Length % 2 != 0)
+            {
+                return null;
+            }
+
+            int numberChars = hex.Length;
+
+            var bytes = new byte[numberChars / 2];//create a new byteArray with the half of the length of the previous hex
+
+            try
+            {
+                for (var i = 0; i < numberChars; i += 2)
+                {
+                    bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);//
+                }
+                return bytes;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public string ConvertByteArrayToString(byte[] arr)
+        {
+            StringBuilder hex = new StringBuilder(arr.Length * 2);
+            foreach (byte b in arr)
+                hex.AppendFormat("{0:x2}", b);
+            return hex.ToString();
+        }
+        #endregion
     }
 
     #region Classes
