@@ -35,6 +35,7 @@
             this.txtWrite = new System.Windows.Forms.TextBox();
             this.btnRead = new System.Windows.Forms.Button();
             this.btnWrite = new System.Windows.Forms.Button();
+            this.txtIpPort = new System.Windows.Forms.TextBox();
             this.SuspendLayout();
             // 
             // connectBtn
@@ -100,11 +101,19 @@
             this.btnWrite.Text = "Write";
             this.btnWrite.UseVisualStyleBackColor = true;
             // 
+            // txtIpPort
+            // 
+            this.txtIpPort.Location = new System.Drawing.Point(13, 43);
+            this.txtIpPort.Name = "txtIpPort";
+            this.txtIpPort.Size = new System.Drawing.Size(154, 20);
+            this.txtIpPort.TabIndex = 7;
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(800, 450);
+            this.Controls.Add(this.txtIpPort);
             this.Controls.Add(this.btnWrite);
             this.Controls.Add(this.btnRead);
             this.Controls.Add(this.txtWrite);
@@ -128,6 +137,7 @@
         private System.Windows.Forms.TextBox txtWrite;
         private System.Windows.Forms.Button btnRead;
         private System.Windows.Forms.Button btnWrite;
+        private System.Windows.Forms.TextBox txtIpPort;
     }
 }
 

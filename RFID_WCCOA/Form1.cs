@@ -5,9 +5,11 @@ using Siemens.UAClientHelper;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.Text;
 using System.Windows.Forms;
+using System.Xml;
 
 namespace RFID_WCCOA
 {
@@ -22,18 +24,20 @@ namespace RFID_WCCOA
         private UARfidMethodIdentifiers myRfidMethodIdentifiers;
         private ListViewNF SubscriptionListView;
         private ListViewNF EventDataLV;
+        private XmlDocument myDoc;
         #endregion
 
         public Form1()
         {
             InitializeComponent();
-            myHelperApi = new UAClientHelperAPI();
 
+            myHelperApi = new UAClientHelperAPI();
             //Create new overridden ListViews
             EventDataLV = new ListViewNF();
             //   DrowEventDataListView();
             SubscriptionListView = new ListViewNF();
             //   DrowSubscriptionListView();
+
         }
 
         private void connectBtn_Click(object sender, EventArgs e)
@@ -41,9 +45,29 @@ namespace RFID_WCCOA
             myHelperApi.ItemChangedNotification -= new MonitoredItemNotificationEventHandler(Notification_MonitoredItem);
             myHelperApi.ItemEventNotification -= new MonitoredItemNotificationEventHandler(Notification_EventItem);
             myHelperApi.KeepAliveNotification -= new KeepAliveEventHandler(Notification_KeepAlive);
-
+            /*
             ConnectForm dlg = new ConnectForm(myHelperApi);
             dlg.ShowDialog();
+            */
+            myHelperApi.CertificateValidationNotification += new CertificateValidationEventHandler(Notification_ServerCertificate);
+            myHelperApi.KeepAliveNotification += new KeepAliveEventHandler(Notification_KeepAlive);
+
+            string url = "opc.tcp://" + txtIpPort.Text + "/";
+            EndpointDescription eds = new EndpointDescription(url);
+
+            try
+            {
+                myHelperApi.Connect(eds, true, false, "", "").Wait();
+                txtIpPort.BackColor = Color.Green;
+                MessageBox.Show("Connection Success", "Inform", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch
+            {
+                MessageBox.Show("Connection Error", "Inform", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                txtIpPort.BackColor = Color.Red;
+
+            }
+
             mySession = myHelperApi.Session;
             if (mySession != null && mySession.Connected)
             {
@@ -57,15 +81,18 @@ namespace RFID_WCCOA
                 {
                     Debug.WriteLine("Error subscribe connection");
                 }
+                myHelperApi.CertificateValidationNotification -= new CertificateValidationEventHandler(Notification_ServerCertificate);
+                myHelperApi.KeepAliveNotification -= new KeepAliveEventHandler(Notification_KeepAlive);
+
                 myHelperApi.ItemChangedNotification += new MonitoredItemNotificationEventHandler(Notification_MonitoredItem);
                 myHelperApi.ItemEventNotification += new MonitoredItemNotificationEventHandler(Notification_EventItem);
                 myHelperApi.KeepAliveNotification += new KeepAliveEventHandler(Notification_KeepAlive);
+
+
                 myRfidNamespaceIndex = GetRfidNamespaceIndex();
                 myRfidMethodIdentifiers = new UARfidMethodIdentifiers(myHelperApi);
             }
         }
-
-
 
         private void stpScnBtn_Click(object sender, EventArgs e)
         {
@@ -89,50 +116,7 @@ namespace RFID_WCCOA
                 Debug.WriteLine("---------------------- Error call stopScan method ----------------------");
             }
         }
-        private ushort GetRfidNamespaceIndex()
-        {
-            ushort nameSpaceIndex = 0;
-
-            ReferenceDescriptionCollection refDescCol = new ReferenceDescriptionCollection();
-            refDescCol = myHelperApi.BrowseRoot();
-
-            //Browse to variable "AutoIdModelVersion" (mandatory in AutoID) in RfidReaderDeviceType object to find out namespace
-            foreach (ReferenceDescription refDescA in refDescCol)
-            {
-                if (refDescA.BrowseName.Name == "Objects")
-                {
-                    refDescCol = myHelperApi.BrowseNode(refDescA);
-                    foreach (ReferenceDescription refDescB in refDescCol)
-                    {
-                        if (refDescB.BrowseName.Name == "DeviceSet")
-                        {
-                            refDescCol = myHelperApi.BrowseNode(refDescB);
-                            foreach (ReferenceDescription refDescC in refDescCol)
-                            {
-                                if (refDescC.TypeDefinition == new ExpandedNodeId(RfidOpcUaForm.AutoID.ObjectTypes.RfidReaderDeviceType, (ushort)myHelperApi.GetNamespaceIndex(RfidOpcUaForm.AutoID.Namespaces.AutoID)))
-                                {
-                                    refDescCol = myHelperApi.BrowseNode(refDescC);
-                                    foreach (ReferenceDescription refDescD in refDescCol)
-                                    {
-                                        if (refDescD.BrowseName.Name == "AutoIdModelVersion")
-                                        {
-                                            nameSpaceIndex = refDescD.NodeId.NamespaceIndex;
-                                            break;
-                                        }
-                                    }
-                                    break;
-                                }
-                            }
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
-
-            return nameSpaceIndex;
-        }
-
+        
         private void strtScnBtn_Click(object sender, EventArgs e)
         {
             NodeId methodNodeId = null;
@@ -373,6 +357,126 @@ namespace RFID_WCCOA
             foreach (byte b in arr)
                 hex.AppendFormat("{0:x2}", b);
             return hex.ToString();
+        }
+
+        public void AddEndpoint(EndpointDescription a_EndpointDesc)
+        {
+            bool alreadyExists = false;
+
+            XmlNode Endpoints = myDoc.SelectSingleNode("//Endpoints");
+            XmlNode newEndpoint = myDoc.CreateNode(XmlNodeType.Element, "Endpoint", null);
+            XmlNode url = myDoc.CreateNode(XmlNodeType.Element, "url", null);
+            XmlNode security = myDoc.CreateNode(XmlNodeType.Element, "securityMode", null);
+            XmlNode serverName = myDoc.CreateNode(XmlNodeType.Element, "serverName", null);
+
+            url.InnerText = a_EndpointDesc.EndpointUrl;
+            string[] policy = a_EndpointDesc.SecurityPolicyUri.Split('#');
+            security.InnerText = policy[1] + "-" + a_EndpointDesc.SecurityMode.ToString();
+            serverName.InnerText = a_EndpointDesc.Server.ApplicationName.ToString();
+
+            if (Endpoints.HasChildNodes)
+            {
+                XmlNodeList children = Endpoints.SelectNodes("//Endpoint");
+                foreach (XmlNode node in children)
+                {
+                    if (node.SelectSingleNode("url").InnerText == url.InnerText)
+                    {
+                        if (node.SelectSingleNode("securityMode").InnerText == security.InnerText)
+                        {
+                            alreadyExists = true;
+                        }
+                    }
+                }
+
+                if (!alreadyExists)
+                {
+                    if (children.Count > 10)
+                    {
+                        Endpoints.RemoveChild(Endpoints.FirstChild);
+                    }
+
+                    newEndpoint.InsertAfter(url, null);
+                    newEndpoint.InsertAfter(security, null);
+                    newEndpoint.InsertAfter(serverName, null);
+                    Endpoints.InsertAfter(newEndpoint, null);
+                    myDoc.Save("Endpoints.xml");
+                }
+            }
+            else
+            {
+                newEndpoint.InsertAfter(url, null);
+                newEndpoint.InsertAfter(security, null);
+                newEndpoint.InsertAfter(serverName, null);
+                Endpoints.InsertAfter(newEndpoint, null);
+                myDoc.Save("Endpoints.xml");
+            }
+        }
+
+        private void Notification_ServerCertificate(CertificateValidator cert, CertificateValidationEventArgs e)
+        {
+            //Handle certificate here
+            //To accept a certificate manually move it to the root folder (Start > mmc.exe > add snap-in > certificates)
+            //Or handle via UAClientCertForm
+
+            if (this.InvokeRequired)
+            {
+                this.BeginInvoke(new CertificateValidationEventHandler(Notification_ServerCertificate), cert, e);
+                return;
+            }
+
+            try
+            {
+                //Always accept
+                e.Accept = true;
+            }
+            catch
+            {
+                ;
+            }
+        }
+
+        private ushort GetRfidNamespaceIndex()
+        {
+            ushort nameSpaceIndex = 0;
+
+            ReferenceDescriptionCollection refDescCol = new ReferenceDescriptionCollection();
+            refDescCol = myHelperApi.BrowseRoot();
+
+            //Browse to variable "AutoIdModelVersion" (mandatory in AutoID) in RfidReaderDeviceType object to find out namespace
+            foreach (ReferenceDescription refDescA in refDescCol)
+            {
+                if (refDescA.BrowseName.Name == "Objects")
+                {
+                    refDescCol = myHelperApi.BrowseNode(refDescA);
+                    foreach (ReferenceDescription refDescB in refDescCol)
+                    {
+                        if (refDescB.BrowseName.Name == "DeviceSet")
+                        {
+                            refDescCol = myHelperApi.BrowseNode(refDescB);
+                            foreach (ReferenceDescription refDescC in refDescCol)
+                            {
+                                if (refDescC.TypeDefinition == new ExpandedNodeId(RfidOpcUaForm.AutoID.ObjectTypes.RfidReaderDeviceType, (ushort)myHelperApi.GetNamespaceIndex(RfidOpcUaForm.AutoID.Namespaces.AutoID)))
+                                {
+                                    refDescCol = myHelperApi.BrowseNode(refDescC);
+                                    foreach (ReferenceDescription refDescD in refDescCol)
+                                    {
+                                        if (refDescD.BrowseName.Name == "AutoIdModelVersion")
+                                        {
+                                            nameSpaceIndex = refDescD.NodeId.NamespaceIndex;
+                                            break;
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            return nameSpaceIndex;
         }
         #endregion
     }
