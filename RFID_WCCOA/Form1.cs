@@ -45,10 +45,7 @@ namespace RFID_WCCOA
             myHelperApi.ItemChangedNotification -= new MonitoredItemNotificationEventHandler(Notification_MonitoredItem);
             myHelperApi.ItemEventNotification -= new MonitoredItemNotificationEventHandler(Notification_EventItem);
             myHelperApi.KeepAliveNotification -= new KeepAliveEventHandler(Notification_KeepAlive);
-            /*
-            ConnectForm dlg = new ConnectForm(myHelperApi);
-            dlg.ShowDialog();
-            */
+
             myHelperApi.CertificateValidationNotification += new CertificateValidationEventHandler(Notification_ServerCertificate);
             myHelperApi.KeepAliveNotification += new KeepAliveEventHandler(Notification_KeepAlive);
 
